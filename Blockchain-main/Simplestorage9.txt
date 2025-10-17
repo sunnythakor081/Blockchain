@@ -1,0 +1,160 @@
+
+Web3.py Simple Storage Deployment Script (Updated for Web3.py v6 & Sepolia)
+
+-------------------------------------------
+SETUP INSTRUCTIONS
+-------------------------------------------
+
+1️⃣ Clone the repository:
+    git clone https://github.com/PatrickAlphaC/web3_py_simple_storage
+    cd web3_py_simple_storage
+
+2️⃣ (Optional) Setup a local Ganache blockchain:
+    - Download: https://www.trufflesuite.com/ganache
+    - Start a workspace
+    - Note RPC URL (default: http://127.0.0.1:8545)
+
+3️⃣ Install Python requirements:
+    pip install -r requirements.txt
+    # or manually
+    pip install web3 python-dotenv py-solc-x
+
+4️⃣ Setup your environment variables:
+    Create a .env file in the project root:
+
+        PRIVATE_KEY=0xYOUR_PRIVATE_KEY
+        MY_ADDRESS=0xYOUR_WALLET_ADDRESS
+        INFURA_PROJECT_ID=YOUR_INFURA_PROJECT_ID   # Only for Sepolia
+
+5️⃣ Connect to blockchain:
+    - Local Ganache:
+        w3 = Web3(Web3.HTTPProvider("http://127.0.0.1:8545"))
+        chain_id = 1337
+    - Sepolia Testnet:
+        w3 = Web3(Web3.HTTPProvider(f"https://sepolia.infura.io/v3/{INFURA_PROJECT_ID}"))
+        chain_id = 11155111
+
+6️⃣ Run deploy script:
+    python deploy.py
+
+-------------------------------------------
+NOTES:
+-------------------------------------------
+- Web3.py v6 update: 
+    All occurrences of `rawTransaction` → `raw_transaction`
+    All occurrences of `transactionHash` → `transaction_hash`
+- Ensure wallet has testnet ETH for Sepolia
+"""
+
+import os
+from web3 import Web3
+from dotenv import load_dotenv
+from solcx import compile_standard, install_solc
+
+# -------------------------
+# 0️⃣ Load environment variables
+# -------------------------
+load_dotenv()
+PRIVATE_KEY = os.getenv("PRIVATE_KEY")
+MY_ADDRESS = os.getenv("MY_ADDRESS")
+INFURA_PROJECT_ID = os.getenv("INFURA_PROJECT_ID")  # Only for Sepolia
+
+# -------------------------
+# 1️⃣ Connect to Blockchain
+# -------------------------
+
+# --- Option A: Local Ganache ---
+# Uncomment to use Ganache
+# w3 = Web3(Web3.HTTPProvider("http://127.0.0.1:8545"))
+# chain_id = 1337
+
+# --- Option B: Sepolia Testnet ---
+# Uncomment to use Sepolia
+w3 = Web3(Web3.HTTPProvider(f"https://sepolia.infura.io/v3/{INFURA_PROJECT_ID}"))
+chain_id = 11155111
+
+if not w3.is_connected():
+    raise Exception("❌ Blockchain connection failed!")
+else:
+    print("✅ Connected to blockchain")
+
+# -------------------------
+# 2️⃣ Compile Solidity Contract
+# -------------------------
+install_solc("0.8.0")  # install compiler if not installed
+
+with open("SimpleStorage.sol", "r") as file:
+    simple_storage_file = file.read()
+
+compiled_sol = compile_standard(
+    {
+        "language": "Solidity",
+        "sources": {"SimpleStorage.sol": {"content": simple_storage_file}},
+        "settings": {
+            "outputSelection": {
+                "*": {"*": ["abi", "metadata", "evm.bytecode", "evm.sourceMap"]}
+            }
+        },
+    },
+    solc_version="0.8.0",
+)
+
+# Extract bytecode and ABI
+bytecode = compiled_sol["contracts"]["SimpleStorage.sol"]["SimpleStorage"]["evm"]["bytecode"]["object"]
+abi = compiled_sol["contracts"]["SimpleStorage.sol"]["SimpleStorage"]["abi"]
+
+# -------------------------
+# 3️⃣ Deploy Contract
+# -------------------------
+SimpleStorage = w3.eth.contract(abi=abi, bytecode=bytecode)
+
+nonce = w3.eth.get_transaction_count(MY_ADDRESS)
+
+transaction = SimpleStorage.constructor().build_transaction(
+    {
+        "from": MY_ADDRESS,
+        "nonce": nonce,
+        "gasPrice": w3.eth.gas_price,
+        "chainId": chain_id,
+    }
+)
+
+# Web3.py v6 update: rawTransaction -> raw_transaction
+signed_txn = w3.eth.account.sign_transaction(transaction, private_key=PRIVATE_KEY)
+
+tx_hash = w3.eth.send_raw_transaction(signed_txn.raw_transaction)  # updated line
+print("⏳ Deploying Contract...")
+tx_receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+print(f"✅ Contract deployed at address: {tx_receipt.contractAddress}")
+
+# -------------------------
+# 4️⃣ Interact with Contract
+# -------------------------
+simple_storage = w3.eth.contract(address=tx_receipt.contractAddress, abi=abi)
+
+# Read initial value
+initial_value = simple_storage.functions.retrieve().call()
+print("Initial Stored Value:", initial_value)
+
+# Update stored value
+new_value = 15
+nonce += 1
+store_txn = simple_storage.functions.store(new_value).build_transaction(
+    {
+        "from": MY_ADDRESS,
+        "nonce": nonce,
+        "gasPrice": w3.eth.gas_price,
+        "chainId": chain_id,
+    }
+)
+
+# Web3.py v6 update: rawTransaction -> raw_transaction
+signed_store_txn = w3.eth.account.sign_transaction(store_txn, private_key=PRIVATE_KEY)
+store_tx_hash = w3.eth.send_raw_transaction(signed_store_txn.raw_transaction)  # updated line
+print("⏳ Updating Stored Value...")
+w3.eth.wait_for_transaction_receipt(store_tx_hash)
+
+updated_value = simple_storage.functions.retrieve().call()
+print("Updated Stored Value:", updated_value)
+
+print("🎉 Deployment and interaction completed successfully!")
