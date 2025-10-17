@@ -1,0 +1,17 @@
+6--Chainlink Oracles
+
+7--Importing from NPM and
+Advanced Solidity
+
+
+8--Web3.py Simple Storage
+Installing VSCode, Python, and
+Web3
+
+
+9--Our First Python Script with
+Web3.py - Deploying a Contract
+
+
+10--Interacting with Our Contract in
+Python & Web3.py
